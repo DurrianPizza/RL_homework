@@ -120,6 +120,9 @@ class FlowMatchingPolicy(BasePolicy):
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
         self.hidden_dim = hidden_dims[0]
+        self.pos_embed = nn.Parameter(
+            torch.randn(1, chunk_size, self.hidden_dim) * 0.02
+        )
 
         # state encoder: state -> per-token context
         self.state_encoder = nn.Sequential(
@@ -147,7 +150,7 @@ class FlowMatchingPolicy(BasePolicy):
                 dim_feedforward=hidden_dims[0],
                 batch_first=True,
             ),
-            num_layers=10,
+            num_layers=2,
         )
         self.head = nn.Sequential(
             nn.Linear(self.token_dim, hidden_dims[0]),
@@ -171,7 +174,7 @@ class FlowMatchingPolicy(BasePolicy):
         # state: (B, state_dim); action: (B, T, A); dt: (B, 1, 1)
         state_feat = self.state_encoder(state).unsqueeze(1)        # (B, 1, H)
         time_feat = self.time_embed(dt.reshape(-1)).unsqueeze(1)   # (B, 1, H)
-        state_feat = state_feat.expand(-1, self.chunk_size, -1)    # (B, T, H)
+        state_feat = state_feat.expand(-1, self.chunk_size, -1) + self.pos_embed
         time_feat = time_feat.expand(-1, self.chunk_size, -1)     # (B, T, H)
         tokens = torch.cat([state_feat, time_feat, action], dim=-1)  # (B, T, 2H + A)
         tokens = self.attn(tokens, tokens.clone())                  # (B, T, 2H + A)
