@@ -147,7 +147,7 @@ class FlowMatchingPolicy(BasePolicy):
                 dim_feedforward=hidden_dims[0],
                 batch_first=True,
             ),
-            num_layers=2,
+            num_layers=10,
         )
         self.head = nn.Sequential(
             nn.Linear(self.token_dim, hidden_dims[0]),
