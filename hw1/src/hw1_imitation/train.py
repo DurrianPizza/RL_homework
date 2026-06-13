@@ -12,6 +12,7 @@ import torch
 import tyro
 import wandb
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from hw1_imitation.data import (
     Normalizer,
@@ -21,6 +22,7 @@ from hw1_imitation.data import (
 )
 from hw1_imitation.model import build_policy, PolicyType
 from hw1_imitation.evaluation import Logger
+from hw1_imitation.evaluation import evaluate_policy
 
 LOGDIR_PREFIX = "exp"
 
@@ -37,10 +39,10 @@ class TrainConfig:
     # The action chunk size.
     chunk_size: int = 8
 
-    batch_size: int = 128
+    batch_size: int = 256
     lr: float = 3e-4
     weight_decay: float = 0.0
-    hidden_dims: tuple[int, ...] = (256, 256, 256)
+    hidden_dims: tuple[int, ...] = (128, 128)
     # The number of epochs to train for.
     num_epochs: int = 400
     # How often to run evaluation, measured in training steps.
@@ -88,7 +90,12 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
 
 def run_training(config: TrainConfig) -> None:
     set_seed(config.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # if torch.backends.mps.is_available():
+    #     device = torch.device("mps")
+    # elif torch.cuda.is_available():
+    #     device = torch.device("cuda")
+    # else:
+    device = torch.device("cpu")
     print(f"Using device: {device}")
 
     zarr_path = download_pusht(config.data_dir)
@@ -122,12 +129,34 @@ def run_training(config: TrainConfig) -> None:
     if config.exp_name is not None:
         exp_name += f"_{config.exp_name}"
     log_dir = Path(LOGDIR_PREFIX) / exp_name
+
+
     wandb.init(
         project=config.wandb_project, config=config_to_dict(config), name=exp_name
     )
     logger = Logger(log_dir)
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     ### TODO: PUT YOUR MAIN TRAINING LOOP HERE ###
+    total_steps = config.num_epochs * len(loader)
+    i = 0
+    with tqdm(total=total_steps, desc="train", dynamic_ncols=True) as pbar:
+        for epoch in range(config.num_epochs):
+            for state, action in loader:
+                i += 1
+                state = state.to(device, non_blocking=True)
+                action = action.to(device, non_blocking=True)
+                loss = model.compute_loss(state, action)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                wandb.log({"loss": loss.item()}, step=i)
+                pbar.set_postfix(loss=f"{loss.item():.4f}", step=i)
+                pbar.update(1)
+                if i % config.eval_interval == 0:
+                    pbar.write(f"step {i}: running eval...")
+                    evaluate_policy(model=model, normalizer=normalizer, device=device, chunk_size=config.chunk_size,
+                                    video_size=config.video_size, num_video_episodes=config.num_video_episodes,
+                                    flow_num_steps=config.flow_num_steps, step=i, logger=logger)
 
     logger.dump_for_grading()
 

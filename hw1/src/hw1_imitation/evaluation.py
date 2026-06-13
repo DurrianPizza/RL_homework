@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 import os
 import tempfile
@@ -215,3 +216,5 @@ def evaluate_policy(
         log_data[f"eval/rollout_ep{idx}"] = video
     logger.log(log_data, step=step)
     log_checkpoint_artifact(model, step=step)
+
+

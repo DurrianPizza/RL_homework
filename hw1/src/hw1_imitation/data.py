@@ -10,11 +10,37 @@ from pathlib import Path
 import numpy as np
 import torch
 import zarr
+import sys
 from torch.utils.data import Dataset
 
 PUSHT_URL = "https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip"
 ZARR_RELATIVE_PATH = Path("pusht") / "pusht_cchi_v7_replay.zarr"
 
+
+def download_progress_hook(block_num, block_size, total_size):
+    """
+    reporthook 参数：每读取一个数据块时调用
+    block_num: 当前是第几个块
+    block_size: 每个块的大小（字节）
+    total_size: 文件总大小（字节，可能为 -1 表示未知）
+    """
+    downloaded = block_num * block_size
+
+    if total_size > 0:
+        percent = min(downloaded / total_size * 100, 100)
+        bar_length = 40
+        filled = int(bar_length * percent / 100)
+        bar = '█' * filled + '░' * (bar_length - filled)
+
+        sys.stdout.write(f'\r|{bar}| {percent:.1f}% {downloaded}/{total_size} bytes')
+        sys.stdout.flush()
+
+        if downloaded >= total_size:
+            sys.stdout.write('\n')
+    else:
+        # 总大小未知时
+        sys.stdout.write(f'\rDownloaded: {downloaded} bytes')
+        sys.stdout.flush()
 
 @dataclass(frozen=True)
 class Normalizer:
@@ -60,7 +86,7 @@ def download_pusht(dataset_dir: Path) -> Path:
 
     zip_path = dataset_dir / "pusht.zip"
     if not zip_path.exists():
-        urllib.request.urlretrieve(PUSHT_URL, zip_path)
+        urllib.request.urlretrieve(PUSHT_URL, zip_path, reporthook=download_progress_hook)
 
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(dataset_dir)
