@@ -156,15 +156,20 @@ def evaluate_policy(
         step: Training step used for logging and artifact metadata.
         logger: Logger for logging metrics.
     """
+    import time
+    t_eval_start = time.time()
     model.eval()
     rewards: list[float] = []
     videos: list[wandb.Video] = []
+    t_episode_total = 0.0
+    t_video_total = 0.0
 
     env = gym.make(ENV_ID, obs_type="state", render_mode="rgb_array")
     action_low = env.action_space.low
     action_high = env.action_space.high
 
     for ep_idx in range(NUM_EVAL_EPISODES):
+        t_ep = time.time()
         obs, _ = env.reset(seed=ep_idx)
         done = False
         chunk_index = chunk_size
@@ -203,10 +208,14 @@ def evaluate_policy(
             chunk_index += 1
 
         rewards.append(max_reward)
+        t_episode_total += time.time() - t_ep
+
         if save_video:
+            t_vid = time.time()
             video = encode_video(frames, fps=20)
             if video is not None:
                 videos.append(video)
+            t_video_total += time.time() - t_vid
 
     env.close()
     log_data: dict[str, float | wandb.Video] = {
@@ -215,6 +224,15 @@ def evaluate_policy(
     for idx, video in enumerate(videos):
         log_data[f"eval/rollout_ep{idx}"] = video
     logger.log(log_data, step=step)
+    t_ckpt = time.time()
     log_checkpoint_artifact(model, step=step)
+    t_ckpt = time.time() - t_ckpt
+
+    t_total = time.time() - t_eval_start
+    print(
+        f"[eval step {step}] mean_reward={float(np.mean(rewards)):.4f}  "
+        f"total={t_total:.1f}s  episodes={t_episode_total:.1f}s  "
+        f"videos={t_video_total:.1f}s  ckpt={t_ckpt:.1f}s"
+    )
 
 
